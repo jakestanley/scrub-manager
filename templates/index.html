@@ -15,7 +15,11 @@
         .controls button:disabled { background: #ccc; cursor: not-allowed; }
         .stats { margin-top: 10px; color: #666; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; }
+        .card.deleted { opacity: 0.5; pointer-events: none; }
+        .card.deleted::after { content: 'DELETED'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(220, 53, 69, 0.9); color: white; padding: 10px 20px; border-radius: 4px; font-weight: bold; }
+        .card.filtered { opacity: 0.5; pointer-events: none; }
+        .card.filtered::after { content: 'HIDDEN BY FILTERS'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(108, 117, 125, 0.9); color: white; padding: 10px 20px; border-radius: 4px; font-weight: bold; }
         .card video { width: 100%; height: 150px; object-fit: cover; border-radius: 4px; }
         .card-info { margin-top: 10px; }
         .card-info h3 { margin: 0 0 5px 0; font-size: 14px; color: #333; }
@@ -250,6 +254,14 @@
             }
             loadAllTags();
             startQueueUpdates();
+            
+            // Try to load files, if empty trigger scan
+            loadFiles().then(() => {
+                const grid = document.getElementById('fileGrid');
+                if (grid.children.length === 0 && savedPath) {
+                    scanFiles();
+                }
+            });
         });
 
         async function addQuickTag(filepath, tag, element) {
@@ -261,8 +273,10 @@
                 });
                 
                 if (response.ok) {
+                    const data = await response.json();
                     element.remove();
-                    loadFiles();
+                    updateCardTags(filepath, data.tags);
+                    checkFilterMatch(filepath);
                 } else {
                     const data = await response.json();
                     alert('Failed to add tag: ' + data.error);
@@ -284,8 +298,10 @@
                 });
                 
                 if (response.ok) {
+                    const data = await response.json();
                     input.value = '';
-                    loadFiles();
+                    updateCardTags(filepath, data.tags);
+                    checkFilterMatch(filepath);
                 } else {
                     const data = await response.json();
                     alert('Failed to add tag: ' + data.error);
@@ -304,7 +320,9 @@
                 });
                 
                 if (response.ok) {
-                    loadFiles();
+                    const data = await response.json();
+                    updateCardTags(filepath, data.tags);
+                    checkFilterMatch(filepath);
                 } else {
                     const data = await response.json();
                     alert('Failed to remove tag: ' + data.error);
@@ -325,7 +343,8 @@
                 });
                 
                 if (response.ok) {
-                    button.closest('.card').remove();
+                    button.closest('.card').classList.add('deleted');
+                    button.textContent = 'Deleted';
                 } else {
                     const data = await response.json();
                     alert('Failed to delete file: ' + data.error);
@@ -370,6 +389,42 @@
         function updateStats(data) {
             const stats = document.getElementById('stats');
             stats.textContent = `Showing ${data.files.length} of ${data.total} files (Page ${data.page}/${data.total_pages})`;
+        }
+
+        function updateCardTags(filepath, tags) {
+            const cards = document.querySelectorAll('.card');
+            for (const card of cards) {
+                const deleteBtn = card.querySelector('.delete-btn');
+                if (deleteBtn && deleteBtn.getAttribute('onclick').includes(filepath)) {
+                    const tagsContainer = card.querySelector('.tags');
+                    tagsContainer.innerHTML = tags.map(tag => 
+                        `<span class="tag ${tag}">${tag}${tag !== 'untagged' ? `<span class="tag-remove" onclick="removeTag('${filepath.replace(/'/g, "\\'").replace(/"/g, '\\"')}', '${tag}', this)">×</span>` : ''}</span>`
+                    ).join('');
+                    break;
+                }
+            }
+        }
+
+        function checkFilterMatch(filepath) {
+            const tagFilter = document.getElementById('tagFilter').value;
+            if (!tagFilter) return; // No filter active
+            
+            // Find the card for this filepath
+            const cards = document.querySelectorAll('.card');
+            for (const card of cards) {
+                const deleteBtn = card.querySelector('.delete-btn');
+                if (deleteBtn && deleteBtn.getAttribute('onclick').includes(filepath)) {
+                    // Get current tags from the card
+                    const tagElements = card.querySelectorAll('.tag');
+                    const currentTags = Array.from(tagElements).map(el => el.textContent.replace('×', ''));
+                    
+                    // Check if card still matches filter
+                    if (!currentTags.includes(tagFilter)) {
+                        card.classList.add('filtered');
+                    }
+                    break;
+                }
+            }
         }
 
         function showError(message) {
