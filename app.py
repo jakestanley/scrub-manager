@@ -88,7 +88,7 @@ def generate_scrub_webm(video_path):
         
         print(f"Generating preview for: {os.path.basename(video_path)}")
         
-        # Generate scrub webm using ffmpeg
+        # Generate scrub webm using ffmpeg with timeout
         cmd = [
             'ffmpeg', '-i', video_path,
             '-filter:v', f'setpts=(PTS-STARTPTS)*0.0167,scale={OUTPUT_WIDTH}:-1',
@@ -100,7 +100,7 @@ def generate_scrub_webm(video_path):
         ]
         
         print(f"Running command: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=300)  # 5 minute timeout
         processing_status[video_path] = 'completed'
         print(f"Completed webm generation: {os.path.basename(video_path)}")
         return webm_path
@@ -333,6 +333,43 @@ def queue_status():
         'remaining': queue_stats['total'] - queue_stats['processed'],
         'processing_status': {k: v for k, v in processing_status.items() if v in ['processing', 'queued']}
     })
+
+@app.route('/api/queue/clear', methods=['POST'])
+def clear_queue():
+    """Clear the processing queue"""
+    try:
+        # Clear the queue
+        queue_size = webm_queue.qsize()
+        while not webm_queue.empty():
+            try:
+                webm_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        # Reset processing status
+        processing_status.clear()
+        queue_stats['processed'] = 0
+        queue_stats['total'] = 0
+        
+        return jsonify({'success': True, 'cleared': queue_size})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/queue/restart', methods=['POST'])
+def restart_queue():
+    """Restart stuck queue processing"""
+    try:
+        # Reset any stuck 'processing' items back to 'queued'
+        stuck_items = []
+        for video_path, status in processing_status.items():
+            if status == 'processing':
+                processing_status[video_path] = 'queued'
+                webm_queue.put(video_path)
+                stuck_items.append(video_path)
+        
+        return jsonify({'success': True, 'requeued': len(stuck_items), 'items': stuck_items})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/tag', methods=['POST'])
 def tag_file():
