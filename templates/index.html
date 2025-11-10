@@ -49,7 +49,6 @@
         <div class="header">
             <h1>Video Scrub Manager</h1>
             <div class="controls">
-                <input type="text" id="scanPath" placeholder="Scan path (e.g., /var/videos)">
                 <button onclick="scanFiles()">Scan</button>
                 <button onclick="scanFiles(true)">Force Refresh</button>
                 <select id="perPage" onchange="loadFiles()">
@@ -139,17 +138,14 @@
         }
 
         async function scanFiles(forceRefresh = false) {
-            const path = document.getElementById('scanPath').value;
             const loading = document.getElementById('loading');
             const error = document.getElementById('error');
-            
-            localStorage.setItem('scanPath', path);
             
             loading.style.display = 'block';
             error.style.display = 'none';
             
             try {
-                const response = await fetch(`/api/scan?path=${encodeURIComponent(path)}&refresh=${forceRefresh}`);
+                const response = await fetch(`/api/scan?refresh=${forceRefresh}`);
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -195,8 +191,30 @@
             try {
                 const response = await fetch('/api/tags');
                 allTags = await response.json();
+                updateTagFilter();
             } catch (err) {
                 console.error('Failed to load tags:', err);
+            }
+        }
+
+        function updateTagFilter() {
+            const tagFilter = document.getElementById('tagFilter');
+            const currentValue = tagFilter.value;
+            
+            // Clear existing options except default ones
+            tagFilter.innerHTML = '<option value="">All tags</option><option value="untagged">Untagged</option>';
+            
+            // Add all available tags
+            allTags.forEach(tag => {
+                const option = document.createElement('option');
+                option.value = tag;
+                option.textContent = tag;
+                tagFilter.appendChild(option);
+            });
+            
+            // Restore previous selection if it still exists
+            if (currentValue && (currentValue === '' || currentValue === 'untagged' || allTags.includes(currentValue))) {
+                tagFilter.value = currentValue;
             }
         }
 
@@ -248,17 +266,13 @@
         }
 
         document.addEventListener('DOMContentLoaded', function() {
-            const savedPath = localStorage.getItem('scanPath');
-            if (savedPath) {
-                document.getElementById('scanPath').value = savedPath;
-            }
             loadAllTags();
             startQueueUpdates();
             
             // Try to load files, if empty trigger scan
             loadFiles().then(() => {
                 const grid = document.getElementById('fileGrid');
-                if (grid.children.length === 0 && savedPath) {
+                if (grid.children.length === 0) {
                     scanFiles();
                 }
             });
