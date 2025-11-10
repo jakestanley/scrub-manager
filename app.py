@@ -14,10 +14,22 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import safe_join
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
+    print("Using environment variables or defaults...")
+    exit(1)
+
 app = Flask(__name__)
-app.config['CACHE_FILE'] = 'video_cache.json'
-app.config['TAGS_FILE'] = 'video_tags.json'
-app.config['CACHE_DURATION'] = 3600  # 1 hour
+# Create data directory if it doesn't exist
+data_dir = os.environ.get('DATA_DIR', './data')
+os.makedirs(data_dir, exist_ok=True)
+
+app.config['CACHE_FILE'] = os.path.join(data_dir, 'video_cache.json')
+app.config['TAGS_FILE'] = os.path.join(data_dir, 'video_tags.json')
+app.config['CACHE_DURATION'] = int(os.environ.get('CACHE_DURATION', '3600'))  # 1 hour
 
 # Preview configuration
 SAMPLE_INTERVAL = 60  # seconds between samples
@@ -28,7 +40,8 @@ BITRATE = '200k'      # output video bitrate
 MIN_PREVIEW_DURATION = 5  # minimum preview duration in seconds
 
 # Queue configuration
-MAX_WORKERS = int(sys.argv[1]) if len(sys.argv) > 1 else 1  # number of concurrent workers
+MAX_WORKERS = int(os.environ.get('MAX_WORKERS', '1'))  # number of concurrent workers
+VIDEO_DIR = os.environ.get('VIDEO_DIR', '/var/videos')  # video directory to scan
 
 # Queue for background webm generation
 webm_queue = queue.Queue()
@@ -100,7 +113,9 @@ def generate_scrub_webm(video_path):
         ]
         
         print(f"Running command: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True, capture_output=True, timeout=300)  # 5 minute timeout
+        # Run with lower priority and CPU throttling
+        nice_cmd = ['nice', '-n', '19'] + cmd  # Lowest priority
+        subprocess.run(nice_cmd, check=True, capture_output=True, timeout=300)  # 5 minute timeout
         processing_status[video_path] = 'completed'
         print(f"Completed webm generation: {os.path.basename(video_path)}")
         return webm_path
@@ -201,7 +216,7 @@ def index():
 @app.route('/api/scan')
 def scan():
     """API endpoint to scan for video files"""
-    root_path = request.args.get('path', '/var/lib/jellyfin/metadata')
+    root_path = VIDEO_DIR  # Use configured video directory
     force_refresh = request.args.get('refresh', 'false').lower() == 'true'
     
     if not force_refresh:
@@ -429,7 +444,20 @@ def delete_file():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # Validate video directory exists
+    if not os.path.exists(VIDEO_DIR):
+        print(f"Error: Video directory '{VIDEO_DIR}' does not exist")
+        print("Set VIDEO_DIR environment variable or ensure directory exists")
+        sys.exit(1)
+    
+    print(f"Starting Trickplay Manager")
+    print(f"Video directory: {VIDEO_DIR}")
+    print(f"Data directory: {data_dir}")
+    print(f"Max workers: {MAX_WORKERS}")
+    
     try:
-        app.run(debug=True, host='0.0.0.0', port=5003, use_reloader=False)
+        # Disable debug in production
+        debug_mode = os.environ.get('DEBUG', 'False').lower() == 'true'
+        app.run(debug=debug_mode, host='0.0.0.0', port=5003, use_reloader=False)
     except KeyboardInterrupt:
         signal_handler(signal.SIGINT, None)
