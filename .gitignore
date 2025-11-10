@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+config/wireguard/wg0.conf
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# qBittorrent data and configuration
+config/qbittorrent/
+
+# Docker volumes and data
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
