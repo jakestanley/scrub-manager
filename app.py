@@ -29,6 +29,7 @@ os.makedirs(data_dir, exist_ok=True)
 
 app.config['CACHE_FILE'] = os.path.join(data_dir, 'video_cache.json')
 app.config['TAGS_FILE'] = os.path.join(data_dir, 'video_tags.json')
+app.config['QUEUE_FILE'] = os.path.join(data_dir, 'queue_state.json')
 app.config['CACHE_DURATION'] = int(os.environ.get('CACHE_DURATION', '3600'))  # 1 hour
 
 # Preview configuration
@@ -112,9 +113,9 @@ def generate_scrub_webm(video_path):
             webm_path
         ]
         
-        print(f"Running command: {' '.join(cmd)}")
         # Run with lower priority and CPU throttling
         nice_cmd = ['nice', '-n', '19'] + cmd  # Lowest priority
+        print(f"Running command: {' '.join(nice_cmd)}")
         subprocess.run(nice_cmd, check=True, capture_output=True, timeout=300)  # 5 minute timeout
         processing_status[video_path] = 'completed'
         print(f"Completed webm generation: {os.path.basename(video_path)}")
@@ -139,6 +140,7 @@ def webm_worker(worker_id):
             print(f"Worker {worker_id}: Processing {queue_stats['processed']}/{queue_stats['total']} ({remaining} remaining) - {os.path.basename(video_path)}")
             
             generate_scrub_webm(video_path)
+            save_queue_state()
             webm_queue.task_done()
         except queue.Empty:
             continue
@@ -157,15 +159,9 @@ def signal_handler(signum, frame):
     print(f"\nReceived signal {signum}, initiating graceful shutdown...")
     shutdown_flag.set()
     
-    # Clear the queue
-    queue_size = webm_queue.qsize()
-    if queue_size > 0:
-        print(f"Clearing {queue_size} items from queue...")
-        while not webm_queue.empty():
-            try:
-                webm_queue.get_nowait()
-            except queue.Empty:
-                break
+    # Save queue state before shutdown
+    print("Saving queue state...")
+    save_queue_state()
     
     # Wait for workers to finish current tasks
     print("Waiting for workers to finish current tasks...")
@@ -209,6 +205,42 @@ def save_tags(tags):
     with open(app.config['TAGS_FILE'], 'w') as f:
         json.dump(tags, f)
 
+def load_queue_state():
+    """Load queue state from disk"""
+    if os.path.exists(app.config['QUEUE_FILE']):
+        with open(app.config['QUEUE_FILE'], 'r') as f:
+            return json.load(f)
+    return {'queue_items': [], 'stats': {'processed': 0, 'total': 0}, 'processing_status': {}}
+
+def save_queue_state():
+    """Save queue state to disk"""
+    queue_items = []
+    temp_queue = queue.Queue()
+    while not webm_queue.empty():
+        try:
+            item = webm_queue.get_nowait()
+            queue_items.append(item)
+            temp_queue.put(item)
+        except queue.Empty:
+            break
+    while not temp_queue.empty():
+        webm_queue.put(temp_queue.get())
+    
+    state = {
+        'queue_items': queue_items,
+        'stats': queue_stats,
+        'processing_status': processing_status
+    }
+    with open(app.config['QUEUE_FILE'], 'w') as f:
+        json.dump(state, f)
+
+# Load queue state on startup
+queue_state = load_queue_state()
+queue_stats.update(queue_state['stats'])
+processing_status.update(queue_state['processing_status'])
+for item in queue_state['queue_items']:
+    webm_queue.put(item)
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -235,6 +267,18 @@ def scan():
         if len(files) > 5:
             print(f"  ... and {len(files) - 5} more files")
         
+        # Reset queue stats for fresh scan
+        if force_refresh:
+            queue_stats['processed'] = 0
+            queue_stats['total'] = 0
+            processing_status.clear()
+            # Clear persisted queue
+            while not webm_queue.empty():
+                try:
+                    webm_queue.get_nowait()
+                except queue.Empty:
+                    break
+        
         # Queue webm generation for all videos
         queued_count = 0
         for f in files:
@@ -249,8 +293,11 @@ def scan():
                 queued_count += 1
         
         if queued_count > 0:
-            queue_stats['total'] += queued_count
-            print(f"Queued {queued_count} videos for processing")
+            queue_stats['total'] = queue_stats['processed'] + queued_count
+            print(f"Queued {queued_count} videos for processing (total: {queue_stats['total']})")
+            save_queue_state()
+        else:
+            print("No new videos to queue - all previews already exist")
         
         save_cache(files)
         return jsonify(files)
@@ -338,16 +385,31 @@ def get_all_tags():
     all_tags.discard('untagged')
     return jsonify(sorted(list(all_tags)))
 
+@app.route('/api/config')
+def get_config():
+    """Get application configuration"""
+    return jsonify({
+        'video_dir': VIDEO_DIR,
+        'data_dir': data_dir,
+        'max_workers': MAX_WORKERS
+    })
+
 @app.route('/api/queue')
 def queue_status():
     """Get render queue status"""
-    return jsonify({
+    include_status = request.args.get('include_status', 'true').lower() == 'true'
+    
+    response = {
         'queue_size': webm_queue.qsize(),
         'processed': queue_stats['processed'],
         'total': queue_stats['total'],
-        'remaining': queue_stats['total'] - queue_stats['processed'],
-        'processing_status': {k: v for k, v in processing_status.items() if v in ['processing', 'queued']}
-    })
+        'remaining': queue_stats['total'] - queue_stats['processed']
+    }
+    
+    if include_status:
+        response['processing_status'] = {k: v for k, v in processing_status.items() if v in ['processing', 'queued']}
+    
+    return jsonify(response)
 
 @app.route('/api/queue/clear', methods=['POST'])
 def clear_queue():

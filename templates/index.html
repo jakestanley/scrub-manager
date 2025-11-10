@@ -48,6 +48,7 @@
     <div class="container">
         <div class="header">
             <h1>Video Scrub Manager</h1>
+            <div class="stats" id="configInfo"></div>
             <div class="controls">
                 <button onclick="scanFiles()">Scan</button>
                 <button onclick="scanFiles(true)">Force Refresh</button>
@@ -265,7 +266,19 @@
             });
         }
 
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                const configInfo = document.getElementById('configInfo');
+                configInfo.innerHTML = `Scanning: <strong>${config.video_dir}</strong>`;
+            } catch (err) {
+                console.error('Failed to load config:', err);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            loadConfig();
             loadAllTags();
             startQueueUpdates();
             
