@@ -512,7 +512,7 @@ if __name__ == '__main__':
         print("Set VIDEO_DIR environment variable or ensure directory exists")
         sys.exit(1)
     
-    print(f"Starting Trickplay Manager")
+    print(f"Starting Scrub Manager")
     print(f"Video directory: {VIDEO_DIR}")
     print(f"Data directory: {data_dir}")
     print(f"Max workers: {MAX_WORKERS}")
