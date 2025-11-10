@@ -28,7 +28,7 @@ BITRATE = '200k'      # output video bitrate
 MIN_PREVIEW_DURATION = 5  # minimum preview duration in seconds
 
 # Queue configuration
-MAX_WORKERS = 1       # number of concurrent workers
+MAX_WORKERS = int(sys.argv[1]) if len(sys.argv) > 1 else 1  # number of concurrent workers
 
 # Queue for background webm generation
 webm_queue = queue.Queue()
