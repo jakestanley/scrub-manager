@@ -52,15 +52,23 @@
             <div class="controls">
                 <button onclick="scanFiles()">Scan</button>
                 <button onclick="scanFiles(true)">Force Refresh</button>
+                <input type="text" id="nameFilter" placeholder="Filter by name (press Enter)" onkeypress="if(event.key==='Enter') loadFiles()">
+                <select id="tagFilter" onchange="loadFiles()">
+                    <option value="">All tags</option>
+                    <option value="untagged">Untagged</option>
+                </select>
+                <select id="sortBy" onchange="loadFiles()">
+                    <option value="size_desc">Size (largest first)</option>
+                    <option value="size_asc">Size (smallest first)</option>
+                    <option value="name_asc">Name (A-Z)</option>
+                    <option value="name_desc">Name (Z-A)</option>
+                </select>
                 <select id="perPage" onchange="loadFiles()">
                     <option value="10">10 per page</option>
                     <option value="20" selected>20 per page</option>
                     <option value="50">50 per page</option>
                 </select>
-                <select id="tagFilter" onchange="loadFiles()">
-                    <option value="">All tags</option>
-                    <option value="untagged">Untagged</option>
-                </select>
+                <button onclick="clearFilters()">Clear Filters</button>
                 <button onclick="clearQueue()">Clear Queue</button>
                 <button onclick="restartQueue()">Restart Queue</button>
             </div>
@@ -162,15 +170,58 @@
             }
         }
 
+        function saveFilters() {
+            const nameFilter = document.getElementById('nameFilter').value;
+            const tagFilter = document.getElementById('tagFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            const perPage = document.getElementById('perPage').value;
+            localStorage.setItem('scrub-manager-name-filter', nameFilter);
+            localStorage.setItem('scrub-manager-tag-filter', tagFilter);
+            localStorage.setItem('scrub-manager-sort-by', sortBy);
+            localStorage.setItem('scrub-manager-per-page', perPage);
+        }
+
+        function loadFilters() {
+            const nameFilter = localStorage.getItem('scrub-manager-name-filter') || '';
+            const tagFilter = localStorage.getItem('scrub-manager-tag-filter') || '';
+            const sortBy = localStorage.getItem('scrub-manager-sort-by') || 'size_desc';
+            const perPage = localStorage.getItem('scrub-manager-per-page') || '20';
+            document.getElementById('nameFilter').value = nameFilter;
+            document.getElementById('tagFilter').value = tagFilter;
+            document.getElementById('sortBy').value = sortBy;
+            document.getElementById('perPage').value = perPage;
+        }
+
+        function clearFilters() {
+            document.getElementById('nameFilter').value = '';
+            document.getElementById('tagFilter').value = '';
+            document.getElementById('sortBy').value = 'size_desc';
+            document.getElementById('perPage').value = '20';
+            localStorage.removeItem('scrub-manager-name-filter');
+            localStorage.removeItem('scrub-manager-tag-filter');
+            localStorage.removeItem('scrub-manager-sort-by');
+            localStorage.removeItem('scrub-manager-per-page');
+            currentPage = 1;
+            loadFiles();
+        }
+
         async function loadFiles() {
             const perPage = document.getElementById('perPage').value;
             const tagFilter = document.getElementById('tagFilter').value;
+            const nameFilter = document.getElementById('nameFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
             const loading = document.getElementById('loading');
+            
+            // Save filters to localStorage
+            saveFilters();
             
             loading.style.display = 'block';
             
             try {
-                const url = `/api/files?page=${currentPage}&per_page=${perPage}${tagFilter ? '&tag=' + encodeURIComponent(tagFilter) : ''}`;
+                let url = `/api/files?page=${currentPage}&per_page=${perPage}&sort=${sortBy}`;
+                if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
+                if (nameFilter) url += '&name=' + encodeURIComponent(nameFilter);
+                
                 const response = await fetch(url);
                 const data = await response.json();
                 
@@ -280,6 +331,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadConfig();
             loadAllTags();
+            loadFilters();
             startQueueUpdates();
             
             // Try to load files, if empty trigger scan

@@ -68,7 +68,7 @@ def scan_video_files(root_path):
     
     for root, dirs, files in os.walk(root_path):
         for file in files:
-            if file.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.m4v')):
+            if file.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.m4v')) and not file.startswith('._'):
                 video_path = os.path.join(root, file)
                 video_size = os.path.getsize(video_path)
                 
@@ -310,6 +310,8 @@ def get_files():
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     tag_filter = request.args.get('tag')
+    name_filter = request.args.get('name', '').lower().strip()
+    sort_by = request.args.get('sort', 'size_desc')
     
     cached_data = load_cache() or []
     tags = load_tags()
@@ -322,8 +324,25 @@ def get_files():
             file_tags = ['untagged']
         f['tags'] = file_tags
         
-        if not tag_filter or tag_filter in file_tags:
-            filtered_files.append(f)
+        # Apply tag filter
+        if tag_filter and tag_filter not in file_tags:
+            continue
+            
+        # Apply name filter
+        if name_filter and name_filter not in f['filename'].lower():
+            continue
+            
+        filtered_files.append(f)
+    
+    # Apply sorting
+    if sort_by == 'name_asc':
+        filtered_files.sort(key=lambda x: x['filename'].lower())
+    elif sort_by == 'name_desc':
+        filtered_files.sort(key=lambda x: x['filename'].lower(), reverse=True)
+    elif sort_by == 'size_asc':
+        filtered_files.sort(key=lambda x: x['size_bytes'])
+    else:  # size_desc (default)
+        filtered_files.sort(key=lambda x: x['size_bytes'], reverse=True)
     
     start = (page - 1) * per_page
     end = start + per_page
