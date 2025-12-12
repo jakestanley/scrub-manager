@@ -5,83 +5,557 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scrub Manager</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .controls input, .controls button, .controls select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
-        .controls button { background: #007bff; color: white; cursor: pointer; }
-        .controls button:hover { background: #0056b3; }
-        .controls button:disabled { background: #ccc; cursor: not-allowed; }
-        .stats { margin-top: 10px; color: #666; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; }
-        .card.deleted { opacity: 0.5; pointer-events: none; }
-        .card.deleted::after { content: 'DELETED'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(220, 53, 69, 0.9); color: white; padding: 10px 20px; border-radius: 4px; font-weight: bold; }
-        .card.filtered { opacity: 0.5; pointer-events: none; }
-        .card.filtered::after { content: 'HIDDEN BY FILTERS'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(108, 117, 125, 0.9); color: white; padding: 10px 20px; border-radius: 4px; font-weight: bold; }
-        .card video { width: 100%; height: 150px; object-fit: cover; border-radius: 4px; }
-        .card-info { margin-top: 10px; }
-        .card-info h3 { margin: 0 0 5px 0; font-size: 14px; color: #333; }
-        .card-info p { margin: 2px 0; font-size: 12px; color: #666; }
-        .card-actions { margin-top: 10px; }
-        .delete-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-        .delete-btn:hover { background: #c82333; }
-        .tag-input { display: flex; gap: 5px; margin-top: 5px; }
-        .tag-input input { flex: 1; padding: 3px; }
-        .tag-input button { padding: 3px 8px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; }
-        .tags { margin-top: 5px; }
-        .tag { display: inline-block; background: #007bff; color: white; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; }
-        .tag.untagged { background: #6c757d; }
-        .tag-remove { margin-left: 4px; cursor: pointer; }
-        .quick-tags { margin-top: 5px; }
-        .quick-tag { display: inline-block; background: #f8f9fa; border: 1px solid #dee2e6; color: #495057; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; cursor: pointer; }
-        .quick-tag:hover { background: #e9ecef; }
-        .pagination { display: flex; justify-content: center; gap: 10px; margin: 20px 0; }
-        .pagination button { padding: 8px 12px; border: 1px solid #ddd; background: white; cursor: pointer; }
-        .pagination button.active { background: #007bff; color: white; }
-        .loading { text-align: center; padding: 40px; }
-        .error { color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 4px; margin: 10px 0; }
+        :root {
+            --page-bg: #f4f6fb;
+            --surface: #ffffff;
+            --surface-muted: #f1f5f9;
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --danger: #dc2626;
+            --danger-dark: #b91c1c;
+            --text: #0f172a;
+            --muted: #6b7280;
+            --border: #e2e8f0;
+            --radius: 16px;
+            --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text);
+            background: linear-gradient(135deg, #eef2ff 0%, #fdf2f8 45%, #f4f6fb 100%);
+            padding: 32px;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        select {
+            background-color: var(--surface);
+        }
+
+        .layout {
+            max-width: 1200px;
+            margin: 0 auto 80px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+            color: #fff;
+            padding: 32px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .hero h1 {
+            margin: 8px 0 4px 0;
+            font-size: 2rem;
+        }
+
+        .hero .meta {
+            margin: 0;
+            opacity: 0.9;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .action-note {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.85);
+            max-width: 360px;
+        }
+
+        .panel {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .panel-header h2 {
+            margin: 0;
+        }
+
+        .panel-header p {
+            margin: 4px 0 0 0;
+            color: var(--muted);
+        }
+
+        .panel-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .panel-footer {
+            margin-top: 24px;
+            border-top: 1px solid var(--border);
+            padding-top: 16px;
+        }
+
+        .panel-note {
+            margin: 12px 0 0 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .field input,
+        .field select {
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+            color: var(--text);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .field input:focus,
+        .field select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            background: var(--surface);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .status-card {
+            background: var(--surface-muted);
+            padding: 16px;
+            border-radius: 14px;
+            border: 1px solid #dbeafe;
+            font-size: 0.95rem;
+            color: var(--text);
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+        }
+
+        .alert {
+            border-radius: 12px;
+            padding: 16px;
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            margin-bottom: 16px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: var(--shadow);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: relative;
+        }
+
+        .card video {
+            width: 100%;
+            height: 180px;
+            border-radius: 12px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: baseline;
+        }
+
+        .card-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        .file-size {
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .file-path {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--muted);
+            word-break: break-all;
+        }
+
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag {
+            background: var(--surface-muted);
+            color: var(--text);
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tag-muted {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        .tag-remove {
+            border: none;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .tag-input {
+            display: flex;
+            gap: 8px;
+        }
+
+        .tag-input input {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+        }
+
+        .tag-input input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: var(--surface);
+        }
+
+        .tag-tools {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .quick-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .quick-tag {
+            border: 1px dashed var(--border);
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            background: transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .quick-tag:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .card-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 999px;
+            padding: 10px 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s ease, box-shadow 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn.primary {
+            background: #fff;
+            color: #1d4ed8;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+
+        .btn.primary.ghost {
+            background: rgba(255,255,255,0.18);
+            color: #fff;
+            box-shadow: none;
+        }
+
+        .btn.secondary {
+            background: var(--surface-muted);
+            color: var(--text);
+        }
+
+        .btn.subtle {
+            background: transparent;
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+
+        .btn.danger {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .btn.danger.subtle {
+            background: #fee2e2;
+            color: var(--danger);
+        }
+
+        .btn.small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 32px;
+        }
+
+        .pagination button {
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 999px;
+            padding: 8px 14px;
+            cursor: pointer;
+        }
+
+        .pagination button.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 0;
+            gap: 16px;
+            color: var(--muted);
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--surface-muted);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .card.deleted::after,
+        .card.filtered::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.75);
+            color: #fff;
+            font-weight: 600;
+            border-radius: inherit;
+            letter-spacing: 0.1em;
+        }
+
+        .card.deleted { opacity: 0.5; }
+        .card.deleted::after { content: 'DELETED'; }
+
+        .card.filtered { opacity: 0.35; }
+        .card.filtered::after { content: 'FILTERED OUT'; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+            background: var(--surface-muted);
+            border-radius: 18px;
+            border: 1px dashed var(--border);
+        }
+
+        @media (max-width: 720px) {
+            body { padding: 20px; }
+            .hero { padding: 24px; }
+            .card video { height: 160px; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Scrub Manager</h1>
-            <div class="stats" id="configInfo"></div>
-            <div class="controls">
-                <button onclick="scanFiles()">Scan</button>
-                <button onclick="scanFiles(true)">Force Refresh</button>
-                <input type="text" id="nameFilter" placeholder="Filter by name (press Enter)" onkeypress="if(event.key==='Enter') loadFiles()">
-                <select id="tagFilter" onchange="loadFiles()">
-                    <option value="">All tags</option>
-                    <option value="untagged">Untagged</option>
-                </select>
-                <select id="sortBy" onchange="loadFiles()">
-                    <option value="size_desc">Size (largest first)</option>
-                    <option value="size_asc">Size (smallest first)</option>
-                    <option value="name_asc">Name (A-Z)</option>
-                    <option value="name_desc">Name (Z-A)</option>
-                </select>
-                <select id="perPage" onchange="loadFiles()">
-                    <option value="10">10 per page</option>
-                    <option value="20" selected>20 per page</option>
-                    <option value="50">50 per page</option>
-                </select>
-                <button onclick="clearFilters()">Clear Filters</button>
-                <button onclick="clearQueue()">Clear Queue</button>
-                <button onclick="restartQueue()">Restart Queue</button>
+    <div class="layout">
+        <header class="hero">
+            <div>
+                <p class="meta">Video tools</p>
+                <h1>Scrub Manager</h1>
+                <p class="meta" id="configInfo">Loading configuration...</p>
             </div>
-            <div class="stats" id="stats"></div>
-            <div class="stats" id="queueStats"></div>
-        </div>
+            <div class="hero-actions">
+                <div class="hero-buttons">
+                    <button type="button" class="btn primary" onclick="scanFiles()" title="Scan the configured video directory and update cached results when new videos appear.">Scan for New Videos</button>
+                    <button type="button" class="btn primary ghost" onclick="scanFiles(true)" title="Ignore cached results and rescan every folder from scratch to rebuild the file list.">Force Cache Refresh</button>
+                </div>
+                <p class="action-note">Scanning looks for new or removed files. Force refresh is slower but guarantees the cache is rebuilt from disk.</p>
+            </div>
+        </header>
 
-        <div id="error" class="error" style="display: none;"></div>
-        <div id="loading" class="loading" style="display: none;">Loading...</div>
-        <div id="content">
-            <div class="grid" id="fileGrid"></div>
-            <div class="pagination" id="pagination"></div>
-        </div>
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Filters &amp; Sorting</h2>
+                    <p>Use these tools to narrow down the results quickly.</p>
+                </div>
+                <div class="panel-actions">
+                    <button type="button" class="btn subtle" onclick="clearFilters()">Reset</button>
+                </div>
+            </div>
+            <div class="filters-grid">
+                <label class="field">
+                    <span>Search by name</span>
+                    <input type="text" id="nameFilter" placeholder="Start typing and press Enter" onkeypress="if(event.key==='Enter') loadFiles()">
+                </label>
+                <label class="field">
+                    <span>Filter by tag</span>
+                    <select id="tagFilter" onchange="loadFiles()">
+                        <option value="">All tags</option>
+                        <option value="untagged">Untagged</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Sort results</span>
+                    <select id="sortBy" onchange="loadFiles()">
+                        <option value="size_desc">Size (largest first)</option>
+                        <option value="size_asc">Size (smallest first)</option>
+                        <option value="name_asc">Name (A-Z)</option>
+                        <option value="name_desc">Name (Z-A)</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Results per page</span>
+                    <select id="perPage" onchange="loadFiles()">
+                        <option value="10">10 per page</option>
+                        <option value="20" selected>20 per page</option>
+                        <option value="50">50 per page</option>
+                    </select>
+                </label>
+            </div>
+            <div class="panel-footer">
+                <div class="panel-actions">
+                    <button type="button" class="btn secondary" onclick="clearQueue()" title="Stop every pending preview job and empty the worker queue.">Clear Queue</button>
+                    <button type="button" class="btn secondary" onclick="restartQueue()" title="Move previews stuck in the processing state back into the queue to try again.">Restart Queue</button>
+                </div>
+                <p class="panel-note">Clearing removes all pending preview jobs. Restarting keeps the queue but requeues anything stuck in processing.</p>
+            </div>
+        </section>
+
+        <section class="panel status-panel">
+            <div class="status-grid">
+                <div class="status-card" id="stats">Loading files...</div>
+                <div class="status-card" id="queueStats" style="display: none;"></div>
+            </div>
+        </section>
+
+        <section class="panel content-panel">
+            <div id="error" class="alert" style="display: none;"></div>
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner" role="status" aria-label="Loading"></div>
+                <p>Loading files...</p>
+            </div>
+            <div id="content">
+                <div class="grid" id="fileGrid"></div>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -100,10 +574,10 @@
                 const response = await fetch('/api/queue');
                 const data = await response.json();
                 const queueStats = document.getElementById('queueStats');
-                
+
                 if (data.queue_size > 0 || data.processed > 0) {
                     queueStats.innerHTML = `Queue: ${data.processed}/${data.total} processed, ${data.queue_size} pending`;
-                    queueStats.style.display = 'block';
+                    queueStats.style.display = 'flex';
                 } else {
                     queueStats.style.display = 'none';
                 }
@@ -114,11 +588,11 @@
 
         async function clearQueue() {
             if (!confirm('Clear the processing queue? This will stop all pending video processing.')) return;
-            
+
             try {
                 const response = await fetch('/api/queue/clear', { method: 'POST' });
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     alert(`Queue cleared. Removed ${data.cleared} items.`);
                     updateQueueStats();
@@ -134,7 +608,7 @@
             try {
                 const response = await fetch('/api/queue/restart', { method: 'POST' });
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     alert(`Queue restarted. Requeued ${data.requeued} stuck items.`);
                     updateQueueStats();
@@ -149,14 +623,14 @@
         async function scanFiles(forceRefresh = false) {
             const loading = document.getElementById('loading');
             const error = document.getElementById('error');
-            
-            loading.style.display = 'block';
+
+            loading.style.display = 'flex';
             error.style.display = 'none';
-            
+
             try {
                 const response = await fetch(`/api/scan?refresh=${forceRefresh}`);
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     currentPage = 1;
                     loadFiles();
@@ -211,22 +685,22 @@
             const nameFilter = document.getElementById('nameFilter').value;
             const sortBy = document.getElementById('sortBy').value;
             const loading = document.getElementById('loading');
-            
-            // Save filters to localStorage
+            const error = document.getElementById('error');
+
             saveFilters();
-            
-            loading.style.display = 'block';
-            
+            error.style.display = 'none';
+            loading.style.display = 'flex';
+
             try {
                 let url = `/api/files?page=${currentPage}&per_page=${perPage}&sort=${sortBy}`;
                 if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
                 if (nameFilter) url += '&name=' + encodeURIComponent(nameFilter);
-                
+
                 const response = await fetch(url);
                 const data = await response.json();
-                
+
                 if (response.ok) {
-                    displayFiles(data.files);
+                    displayFiles(data.files || []);
                     updatePagination(data);
                     updateStats(data);
                 } else {
@@ -244,6 +718,7 @@
                 const response = await fetch('/api/tags');
                 allTags = await response.json();
                 updateTagFilter();
+                refreshAllQuickTags();
             } catch (err) {
                 console.error('Failed to load tags:', err);
             }
@@ -252,69 +727,147 @@
         function updateTagFilter() {
             const tagFilter = document.getElementById('tagFilter');
             const currentValue = tagFilter.value;
-            
-            // Clear existing options except default ones
             tagFilter.innerHTML = '<option value="">All tags</option><option value="untagged">Untagged</option>';
-            
-            // Add all available tags
+
             allTags.forEach(tag => {
                 const option = document.createElement('option');
                 option.value = tag;
                 option.textContent = tag;
                 tagFilter.appendChild(option);
             });
-            
-            // Restore previous selection if it still exists
+
             if (currentValue && (currentValue === '' || currentValue === 'untagged' || allTags.includes(currentValue))) {
                 tagFilter.value = currentValue;
             }
         }
 
+        function refreshAllQuickTags() {
+            document.querySelectorAll('.card').forEach(card => {
+                const tags = getCardTags(card);
+                refreshQuickTags(card, tags);
+            });
+        }
+
         function displayFiles(files) {
             const grid = document.getElementById('fileGrid');
             grid.innerHTML = '';
-            
+
+            if (!files.length) {
+                grid.innerHTML = '<div class="empty-state">No videos match the current filters. Try scanning or clearing the filters.</div>';
+                return;
+            }
+
             files.forEach(file => {
-                const card = document.createElement('div');
+                const card = document.createElement('article');
                 card.className = 'card';
+                card.dataset.filepath = file.full_path;
+
                 card.innerHTML = `
-                    <video controls autoplay muted loop preload="metadata">
-                        <source src="/api/video?path=${encodeURIComponent(file.full_path)}" type="video/webm">
-                        Your browser does not support the video tag.
-                    </video>
-                    <div class="card-info">
-                        <h3>${file.filename}</h3>
-                        <p><strong>Path:</strong> ${file.path}</p>
-                        <p><strong>Size:</strong> ${file.size}</p>
-                        <div class="tags">
-                            ${file.tags.map(tag => `<span class="tag ${tag}">${tag}${tag !== 'untagged' ? `<span class="tag-remove" onclick="removeTag('${file.full_path.replace(/'/g, "\\'").replace(/"/g, '\\"')}', '${tag}', this)">×</span>` : ''}</span>`).join('')}
-                        </div>
-                        <div class="tag-input">
-                            <input type="text" placeholder="Add tag" onkeypress="if(event.key==='Enter') addTag('${file.full_path}', this)">
-                            <button onclick="addTag('${file.full_path}', this.previousElementSibling)">Add</button>
-                        </div>
-                        <div class="quick-tags" id="quickTags-${btoa(file.full_path).replace(/[^a-zA-Z0-9]/g, '')}">
-                        </div>
+                    <div class="video-frame">
+                        <video controls autoplay muted loop preload="metadata">
+                            <source src="/api/video?path=${encodeURIComponent(file.full_path)}" type="video/webm">
+                            Your browser does not support the video tag.
+                        </video>
                     </div>
-                    <div class="card-actions">
-                        <button class="delete-btn" onclick="deleteFile('${file.full_path}', this)">Delete Video</button>
+                    <div class="card-body">
+                        <div class="card-header">
+                            <h3></h3>
+                            <span class="file-size"></span>
+                        </div>
+                        <p class="file-path"></p>
+                        <div class="tags" role="list"></div>
+                        <div class="tag-tools">
+                            <div class="tag-input">
+                                <input type="text" placeholder="Add tag" aria-label="Add tag">
+                                <button type="button" class="btn small secondary">Add</button>
+                            </div>
+                            <div class="quick-tags" aria-label="Quick tags"></div>
+                        </div>
+                        <div class="card-actions">
+                            <button type="button" class="btn danger subtle delete-btn">Delete Video</button>
+                        </div>
                     </div>
                 `;
+
                 grid.appendChild(card);
-                
-                const quickTagsContainer = document.getElementById(`quickTags-${btoa(file.full_path).replace(/[^a-zA-Z0-9]/g, '')}`);
-                if (quickTagsContainer) {
-                    allTags.forEach(tag => {
-                        if (!file.tags.includes(tag)) {
-                            const quickTag = document.createElement('span');
-                            quickTag.className = 'quick-tag';
-                            quickTag.textContent = tag;
-                            quickTag.onclick = () => addQuickTag(file.full_path, tag, quickTag);
-                            quickTagsContainer.appendChild(quickTag);
-                        }
-                    });
-                }
+
+                const titleEl = card.querySelector('h3');
+                titleEl.textContent = file.filename;
+                titleEl.setAttribute('title', file.filename);
+
+                const sizeEl = card.querySelector('.file-size');
+                sizeEl.textContent = file.size;
+
+                const pathEl = card.querySelector('.file-path');
+                pathEl.textContent = file.path;
+                pathEl.setAttribute('title', file.path);
+
+                const tagInput = card.querySelector('.tag-input input');
+                const addButton = card.querySelector('.tag-input button');
+                const deleteButton = card.querySelector('.delete-btn');
+
+                tagInput.addEventListener('keypress', event => {
+                    if (event.key === 'Enter') {
+                        addTag(file.full_path, tagInput);
+                    }
+                });
+
+                addButton.addEventListener('click', () => addTag(file.full_path, tagInput));
+                deleteButton.addEventListener('click', () => deleteFile(file.full_path, deleteButton));
+
+                renderTags(card.querySelector('.tags'), file.tags, file.full_path);
+                refreshQuickTags(card, file.tags);
             });
+        }
+
+        function renderTags(container, tags, filepath) {
+            container.innerHTML = '';
+            const tagList = Array.isArray(tags) && tags.length ? tags : ['untagged'];
+
+            tagList.forEach(tag => {
+                const chip = document.createElement('span');
+                chip.className = 'tag' + (tag === 'untagged' ? ' tag-muted' : '');
+                chip.dataset.tag = tag;
+                chip.textContent = tag;
+
+                if (tag !== 'untagged') {
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'tag-remove';
+                    removeBtn.textContent = '×';
+                    removeBtn.setAttribute('aria-label', `Remove ${tag} tag`);
+                    removeBtn.addEventListener('click', () => removeTag(filepath, tag));
+                    chip.appendChild(removeBtn);
+                }
+
+                container.appendChild(chip);
+            });
+        }
+
+        function refreshQuickTags(card, tags) {
+            const quickTagsContainer = card.querySelector('.quick-tags');
+            if (!quickTagsContainer) return;
+
+            quickTagsContainer.innerHTML = '';
+            const activeTags = Array.isArray(tags) ? tags : [];
+
+            allTags.forEach(tag => {
+                if (activeTags.includes(tag)) return;
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'quick-tag';
+                chip.textContent = tag;
+                chip.addEventListener('click', () => addQuickTag(card.dataset.filepath, tag));
+                quickTagsContainer.appendChild(chip);
+            });
+        }
+
+        function findCard(filepath) {
+            return Array.from(document.querySelectorAll('.card')).find(card => card.dataset.filepath === filepath);
+        }
+
+        function getCardTags(card) {
+            return Array.from(card.querySelectorAll('.tag')).map(tag => tag.dataset.tag);
         }
 
         async function loadConfig() {
@@ -333,8 +886,7 @@
             loadAllTags();
             loadFilters();
             startQueueUpdates();
-            
-            // Try to load files, if empty trigger scan
+
             loadFiles().then(() => {
                 const grid = document.getElementById('fileGrid');
                 if (grid.children.length === 0) {
@@ -343,17 +895,16 @@
             });
         });
 
-        async function addQuickTag(filepath, tag, element) {
+        async function addQuickTag(filepath, tag) {
             try {
                 const response = await fetch('/api/tag', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filepath, tag, action: 'add' })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    element.remove();
                     updateCardTags(filepath, data.tags);
                     checkFilterMatch(filepath);
                 } else {
@@ -368,14 +919,14 @@
         async function addTag(filepath, input) {
             const tag = input.value.trim();
             if (!tag) return;
-            
+
             try {
                 const response = await fetch('/api/tag', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filepath, tag, action: 'add' })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     input.value = '';
@@ -390,14 +941,14 @@
             }
         }
 
-        async function removeTag(filepath, tag, element) {
+        async function removeTag(filepath, tag) {
             try {
                 const response = await fetch('/api/tag', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filepath, tag, action: 'remove' })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     updateCardTags(filepath, data.tags);
@@ -413,17 +964,21 @@
 
         async function deleteFile(filepath, button) {
             if (!confirm('Are you sure you want to delete this video file?')) return;
-            
+
             try {
                 const response = await fetch('/api/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filepath })
                 });
-                
+
                 if (response.ok) {
-                    button.closest('.card').classList.add('deleted');
-                    button.textContent = 'Deleted';
+                    const card = button.closest('.card');
+                    if (card) {
+                        card.classList.add('deleted');
+                        button.textContent = 'Deleted';
+                        button.disabled = true;
+                    }
                 } else {
                     const data = await response.json();
                     alert('Failed to delete file: ' + data.error);
@@ -436,73 +991,61 @@
         function updatePagination(data) {
             const pagination = document.getElementById('pagination');
             pagination.innerHTML = '';
-            
+
             if (data.total_pages <= 1) return;
-            
+
             if (currentPage > 1) {
                 const prevBtn = document.createElement('button');
                 prevBtn.textContent = 'Previous';
-                prevBtn.onclick = () => { currentPage--; loadFiles(); };
+                prevBtn.addEventListener('click', () => { currentPage--; loadFiles(); });
                 pagination.appendChild(prevBtn);
             }
-            
+
             const startPage = Math.max(1, currentPage - 2);
             const endPage = Math.min(data.total_pages, currentPage + 2);
-            
+
             for (let i = startPage; i <= endPage; i++) {
                 const pageBtn = document.createElement('button');
                 pageBtn.textContent = i;
-                pageBtn.className = i === currentPage ? 'active' : '';
-                pageBtn.onclick = () => { currentPage = i; loadFiles(); };
+                if (i === currentPage) {
+                    pageBtn.classList.add('active');
+                }
+                pageBtn.addEventListener('click', () => { currentPage = i; loadFiles(); });
                 pagination.appendChild(pageBtn);
             }
-            
+
             if (currentPage < data.total_pages) {
                 const nextBtn = document.createElement('button');
                 nextBtn.textContent = 'Next';
-                nextBtn.onclick = () => { currentPage++; loadFiles(); };
+                nextBtn.addEventListener('click', () => { currentPage++; loadFiles(); });
                 pagination.appendChild(nextBtn);
             }
         }
 
         function updateStats(data) {
             const stats = document.getElementById('stats');
-            stats.textContent = `Showing ${data.files.length} of ${data.total} files (Page ${data.page}/${data.total_pages})`;
+            stats.textContent = `Showing ${data.files.length} of ${data.total} files (Page ${data.page}/${data.total_pages || 1})`;
         }
 
         function updateCardTags(filepath, tags) {
-            const cards = document.querySelectorAll('.card');
-            for (const card of cards) {
-                const deleteBtn = card.querySelector('.delete-btn');
-                if (deleteBtn && deleteBtn.getAttribute('onclick').includes(filepath)) {
-                    const tagsContainer = card.querySelector('.tags');
-                    tagsContainer.innerHTML = tags.map(tag => 
-                        `<span class="tag ${tag}">${tag}${tag !== 'untagged' ? `<span class="tag-remove" onclick="removeTag('${filepath.replace(/'/g, "\\'").replace(/"/g, '\\"')}', '${tag}', this)">×</span>` : ''}</span>`
-                    ).join('');
-                    break;
-                }
-            }
+            const card = findCard(filepath);
+            if (!card) return;
+            renderTags(card.querySelector('.tags'), tags, filepath);
+            refreshQuickTags(card, tags);
         }
 
         function checkFilterMatch(filepath) {
             const tagFilter = document.getElementById('tagFilter').value;
-            if (!tagFilter) return; // No filter active
-            
-            // Find the card for this filepath
-            const cards = document.querySelectorAll('.card');
-            for (const card of cards) {
-                const deleteBtn = card.querySelector('.delete-btn');
-                if (deleteBtn && deleteBtn.getAttribute('onclick').includes(filepath)) {
-                    // Get current tags from the card
-                    const tagElements = card.querySelectorAll('.tag');
-                    const currentTags = Array.from(tagElements).map(el => el.textContent.replace('×', ''));
-                    
-                    // Check if card still matches filter
-                    if (!currentTags.includes(tagFilter)) {
-                        card.classList.add('filtered');
-                    }
-                    break;
-                }
+            if (!tagFilter) return;
+
+            const card = findCard(filepath);
+            if (!card) return;
+
+            const tags = getCardTags(card);
+            if (tags.includes(tagFilter)) {
+                card.classList.remove('filtered');
+            } else {
+                card.classList.add('filtered');
             }
         }
 
