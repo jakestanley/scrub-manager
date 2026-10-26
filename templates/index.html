@@ -543,6 +543,12 @@
                     <input type="text" id="nameFilter" placeholder="Start typing and press Enter" onkeypress="if(event.key==='Enter') loadFiles()">
                 </label>
                 <label class="field">
+                    <span>Folder</span>
+                    <select id="folderFilter" onchange="currentPage = 1; loadFiles()">
+                        <option value="">All folders</option>
+                    </select>
+                </label>
+                <label class="field">
                     <span>Filter by tag</span>
                     <select id="tagFilter" onchange="loadFiles()">
                         <option value="">All tags</option>
@@ -675,6 +681,7 @@
             const perPage = document.getElementById('perPage').value;
             localStorage.setItem('scrub-manager-name-filter', nameFilter);
             localStorage.setItem('scrub-manager-tag-filter', tagFilter);
+            localStorage.setItem('scrub-manager-folder-filter', document.getElementById('folderFilter').value);
             localStorage.setItem('scrub-manager-sort-by', sortBy);
             localStorage.setItem('scrub-manager-per-page', perPage);
         }
@@ -693,10 +700,12 @@
         function clearFilters() {
             document.getElementById('nameFilter').value = '';
             document.getElementById('tagFilter').value = '';
+            document.getElementById('folderFilter').value = '';
             document.getElementById('sortBy').value = 'size_desc';
             document.getElementById('perPage').value = '20';
             localStorage.removeItem('scrub-manager-name-filter');
             localStorage.removeItem('scrub-manager-tag-filter');
+            localStorage.removeItem('scrub-manager-folder-filter');
             localStorage.removeItem('scrub-manager-sort-by');
             localStorage.removeItem('scrub-manager-per-page');
             currentPage = 1;
@@ -717,7 +726,9 @@
 
             try {
                 let url = `/api/files?page=${currentPage}&per_page=${perPage}&sort=${sortBy}`;
+                const folderFilter = document.getElementById('folderFilter').value;
                 if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
+                if (folderFilter) url += '&folder=' + encodeURIComponent(folderFilter);
                 if (nameFilter) url += '&name=' + encodeURIComponent(nameFilter);
 
                 const response = await fetch(url);
@@ -762,6 +773,33 @@
 
             if (currentValue && (currentValue === '' || currentValue === 'untagged' || allTags.includes(currentValue))) {
                 tagFilter.value = currentValue;
+            }
+        }
+
+        async function loadFolders() {
+            try {
+                const response = await fetch('/api/folders');
+                const folders = await response.json();
+                const folderFilter = document.getElementById('folderFilter');
+                // Before the first load the select is empty, so fall back to the remembered choice
+                const currentValue = folderFilter.value || localStorage.getItem('scrub-manager-folder-filter') || '';
+                folderFilter.innerHTML = '<option value="">All folders</option>';
+
+                folders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder;
+                    // Indent by depth so the list reads as a tree
+                    const depth = folder.split('/').length - 1;
+                    option.textContent = '   '.repeat(depth) + folder.split('/').pop();
+                    option.title = folder;
+                    folderFilter.appendChild(option);
+                });
+
+                if (folders.includes(currentValue)) {
+                    folderFilter.value = currentValue;
+                }
+            } catch (err) {
+                console.error('Failed to load folders:', err);
             }
         }
 
@@ -931,6 +969,7 @@
                 // Refresh the cards when previews finish, so placeholders turn into videos
                 const statusKey = JSON.stringify(c);
                 if (lastStatusKey !== null && statusKey !== lastStatusKey && !document.activeElement.matches('input')) {
+                    loadFolders();
                     loadFiles();
                 }
                 lastStatusKey = statusKey;
@@ -949,7 +988,7 @@
             loadAllTags();
             loadFilters();
             startStatusUpdates();
-            loadFiles();
+            loadFolders().then(loadFiles);
         });
 
         async function addQuickTag(filepath, tag) {

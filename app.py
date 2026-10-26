@@ -43,11 +43,13 @@ def get_files():
     """Get paginated file list"""
     page = max(1, int(request.args.get('page', 1)))
     per_page = min(100, max(1, int(request.args.get('per_page', 20))))
+    folder = request.args.get('folder', '').strip('/')
     videos, total = store.list_videos(
         page, per_page,
         sort=request.args.get('sort', 'size_desc'),
         name_filter=request.args.get('name', '').strip(),
         tag_filter=request.args.get('tag'),
+        folder=os.path.join(config.VIDEO_DIR, folder) if folder else None,
     )
     files = [{
         'filename': v['filename'],
@@ -115,6 +117,18 @@ def scan():
 def retry():
     """Requeue every video whose scrub failed"""
     return jsonify({'success': True, 'requeued': store.retry_failed()})
+
+
+@app.route('/api/folders')
+def get_folders():
+    """Folders containing videos, relative to VIDEO_DIR, including their parent folders"""
+    folders = set()
+    for directory in store.list_directories():
+        rel = os.path.relpath(directory, config.VIDEO_DIR)
+        while rel not in ('', '.'):
+            folders.add(rel)
+            rel = os.path.dirname(rel)
+    return jsonify(sorted(folders, key=str.lower))
 
 
 @app.route('/api/tags')

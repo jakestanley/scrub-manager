@@ -9,7 +9,7 @@ A web app for quickly reviewing a video library. Every video gets a short, fast-
 - **Fast ffmpeg fallback**: otherwise, only keyframes are decoded and sampled (about 4 seconds for a 30 minute 1080p video)
 - **Previews stored separately**: scrubs go in `SCRUB_DIR`, never in your media folders
 - **Retries**: failed previews are retried with increasing delays, and can be retried by hand
-- **Tagging, filtering, sorting, deletion**
+- **Tagging, filtering (by name, tag, folder), sorting, deletion**
 - **Low system impact**: ffmpeg runs at the lowest CPU and IO priority
 
 ## Quick start
@@ -71,7 +71,8 @@ find "$VIDEO_DIR" -name '*_scrub.webm' -delete
 
 ## API
 
-- `GET /api/files` - paginated video list (`page`, `per_page`, `sort`, `name`, `tag`)
+- `GET /api/files` - paginated video list (`page`, `per_page`, `sort`, `name`, `tag`, `folder`)
+- `GET /api/folders` - folders containing videos, relative to `VIDEO_DIR`
 - `GET /api/scrub?path=` - preview video, or `202` with its status if it isn't ready
 - `GET /api/original?path=` - original video file
 - `GET /api/status` - preview counts, last scan, configuration

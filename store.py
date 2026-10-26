@@ -193,9 +193,19 @@ def get_video(path):
         return dict(row) if row else None
 
 
-def list_videos(page, per_page, sort, name_filter=None, tag_filter=None):
+def list_directories():
+    with connect() as conn:
+        return [row['directory'] for row in conn.execute('SELECT DISTINCT directory FROM videos')]
+
+
+def list_videos(page, per_page, sort, name_filter=None, tag_filter=None, folder=None):
     where = []
     params = []
+    if folder:
+        # The folder itself and everything below it
+        prefix = folder.rstrip('/') + '/'
+        where.append('(directory = ? OR substr(directory, 1, ?) = ?)')
+        params += [folder.rstrip('/'), len(prefix), prefix]
     if name_filter:
         where.append('filename LIKE ? COLLATE NOCASE')
         params.append(f'%{name_filter}%')
