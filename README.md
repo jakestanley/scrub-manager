@@ -1,70 +1,83 @@
 # Scrub Manager
 
-A web-based video management tool that generates fast scrub previews for quick video review and organization.
+A web app for quickly reviewing a video library. Every video gets a short, fast-forward "scrub" preview so you can see what's in it at a glance, then tag or delete it.
 
 ## Features
 
-- **Fast Scrub Previews**: Generates compressed WebM previews where each frame represents 60 seconds of the original video
-- **Video Management**: Scan directories, view file sizes, and delete unwanted videos
-- **Tagging System**: Tag videos for organization with quick-tag buttons and filtering
-- **Background Processing**: Queue-based preview generation with configurable worker count
-- **Persistent State**: Queue and processing state survives application restarts
-- **Low System Impact**: Uses nice priority and CPU throttling to minimize system load
+- **Background scanning**: the video directory is rescanned on a timer; new and changed videos are queued automatically
+- **Uses Jellyfin trickplay when it exists**: if Jellyfin has saved trickplay tiles next to a video, the preview is built from those in under a second instead of decoding the video
+- **Fast ffmpeg fallback**: otherwise, only keyframes are decoded and sampled (about 4 seconds for a 30 minute 1080p video)
+- **Previews stored separately**: scrubs go in `SCRUB_DIR`, never in your media folders
+- **Retries**: failed previews are retried with increasing delays, and can be retried by hand
+- **Tagging, filtering, sorting, deletion**
+- **Low system impact**: ffmpeg runs at the lowest CPU and IO priority
 
-## Quick Start
+## Quick start
 
-1. **Clone and setup**:
-   ```bash
-   git clone <repo-url>
-   cd scrub-manager
-   ./run.sh
-   ```
+```bash
+./run.sh
+```
 
-2. **Configure**: The script will prompt for:
-   - Video directory path (where your videos are stored)
-   - Data directory (for cache and state files)
-   - Number of workers (concurrent preview generation)
+The first run creates `.env` from `.env.example` and exits so you can edit it. Then run it again and open http://localhost:5003.
 
-3. **Access**: Open http://localhost:5003 in your browser
+Requires Python 3.9+ and ffmpeg/ffprobe (with libvpx-vp9).
 
 ## Configuration
 
-Environment variables (stored in `.env`):
+Set in `.env` (see `.env.example`):
 
-- `VIDEO_DIR`: Directory to scan for videos
-- `DATA_DIR`: Directory for cache and state files (default: `./data`)
-- `MAX_WORKERS`: Number of concurrent preview generators (default: `1`)
-- `DEBUG`: Enable debug mode (default: `false`)
-- `CACHE_DURATION`: Cache duration in seconds (default: `3600`)
+| Variable | Default | Meaning |
+|---|---|---|
+| `VIDEO_DIR` | `/var/videos` | Directory scanned recursively for `.mp4 .mkv .avi .mov .m4v` |
+| `SCRUB_DIR` | `~/.local/share/trickplay/scrubs` | Where previews are written, mirroring `VIDEO_DIR`'s layout |
+| `DATA_DIR` | `./data` | SQLite database (videos, preview status, tags) |
+| `MAX_WORKERS` | `1` | Concurrent preview generators |
+| `SCAN_INTERVAL` | `900` | Seconds between background scans |
+| `MAX_ATTEMPTS` | `5` | Give up on a preview after this many failures |
+| `JELLYFIN_TRICKPLAY_INTERVAL` | `10` | Jellyfin's trickplay interval setting, in seconds |
+| `PORT` | `5003` | HTTP port |
+| `DEBUG` | `false` | Flask debug mode |
 
-## Requirements
+## Jellyfin trickplay
 
-- Python 3.7+
-- ffmpeg (for video processing)
-- Flask and python-dotenv (installed automatically)
+Jellyfin (10.9+) stores trickplay as JPEG tile sheets. They are only visible to this app when Jellyfin is set to **save trickplay images next to media** (Library settings → "Save trickplay images next to media"), which produces:
 
-## How It Works
+```
+Film.mkv
+Film.trickplay/320 - 10x10/0.jpg, 1.jpg, ...
+```
 
-1. **Scan**: Recursively scans the configured video directory for MP4, MKV, AVI, MOV, and M4V files
-2. **Queue**: Videos without existing previews are queued for processing
-3. **Generate**: Background workers create compressed WebM previews using ffmpeg
-4. **Manage**: Web interface displays videos with previews, tagging, and deletion options
+With that setting off, Jellyfin keeps them in its own metadata folder keyed by internal item IDs, and this app falls back to ffmpeg.
 
-## Preview Specifications
+If Jellyfin generates trickplay for a video after an ffmpeg preview was made, the next scan swaps the preview for one built from Jellyfin's tiles.
 
-- **Frame Rate**: 30fps output
-- **Time Compression**: Each frame = 60 seconds of original video
-- **Resolution**: 320px width (height auto-scaled)
-- **Format**: WebM with VP9 codec
-- **Minimum Duration**: 5 seconds
-- **File Naming**: `{original_name}_scrub.webm`
+## Previews
 
-## API Endpoints
+- Each second of preview covers 60 seconds of video (a 2 hour film becomes a 2 minute preview)
+- 320px wide, VP9 WebM, no audio
+- Stored at `SCRUB_DIR/<path relative to VIDEO_DIR>.webm`, e.g. `Films/Film.mkv.webm`
+- Written to a `.part` file first, so an interrupted run never leaves a broken preview behind
 
-- `GET /api/scan` - Scan for videos
-- `GET /api/files` - Get paginated file list
-- `GET /api/video` - Serve video preview
-- `GET /api/queue` - Get processing queue status
-- `POST /api/tag` - Add/remove video tags
-- `POST /api/delete` - Delete video file
+## Upgrading from the old version
 
+Tags from `data/video_tags.json` are imported into the database on first start. `video_cache.json` and `queue_state.json` are no longer used.
+
+Old previews were written next to the videos as `*_scrub.webm`. They are ignored now; to remove them:
+
+```bash
+find "$VIDEO_DIR" -name '*_scrub.webm' -print     # check first
+find "$VIDEO_DIR" -name '*_scrub.webm' -delete
+```
+
+## API
+
+- `GET /api/files` - paginated video list (`page`, `per_page`, `sort`, `name`, `tag`)
+- `GET /api/scrub?path=` - preview video, or `202` with its status if it isn't ready
+- `GET /api/original?path=` - original video file
+- `GET /api/status` - preview counts, last scan, configuration
+- `POST /api/scan` - scan now
+- `POST /api/retry` - requeue failed previews
+- `GET /api/tags`, `POST /api/tag` - list tags; add/remove a tag (`filepath`, `tag`, `action`)
+- `POST /api/delete` - delete a video and its preview (`filepath`)
+
+Paths must be videos the scanner found inside `VIDEO_DIR`.

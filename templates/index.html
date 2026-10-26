@@ -220,6 +220,35 @@
             background: #000;
         }
 
+        .scrub-placeholder {
+            height: 180px;
+            border-radius: 12px;
+            background: var(--surface-muted);
+            border: 1px dashed var(--border);
+            color: var(--muted);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 12px;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        .scrub-placeholder .scrub-error {
+            font-size: 0.75rem;
+            color: var(--danger);
+            word-break: break-word;
+            max-height: 80px;
+            overflow: auto;
+        }
+
+        .scrub-source {
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+
         .card-body {
             display: flex;
             flex-direction: column;
@@ -238,6 +267,16 @@
             font-size: 1rem;
             color: var(--text);
             word-break: break-word;
+        }
+
+        .title-link {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .title-link:hover,
+        .title-link:focus {
+            text-decoration: underline;
         }
 
         .file-size {
@@ -468,7 +507,7 @@
         @media (max-width: 720px) {
             body { padding: 20px; }
             .hero { padding: 24px; }
-            .card video { height: 160px; }
+            .card video, .scrub-placeholder { height: 160px; }
         }
     </style>
 </head>
@@ -482,10 +521,9 @@
             </div>
             <div class="hero-actions">
                 <div class="hero-buttons">
-                    <button type="button" class="btn primary" onclick="scanFiles()" title="Scan the configured video directory and update cached results when new videos appear.">Scan for New Videos</button>
-                    <button type="button" class="btn primary ghost" onclick="scanFiles(true)" title="Ignore cached results and rescan every folder from scratch to rebuild the file list.">Force Cache Refresh</button>
+                    <button type="button" class="btn primary" onclick="scanFiles()" title="Scan the video directory now instead of waiting for the next background scan.">Scan Now</button>
                 </div>
-                <p class="action-note">Scanning looks for new or removed files. Force refresh is slower but guarantees the cache is rebuilt from disk.</p>
+                <p class="action-note" id="scanInfo">The video directory is scanned automatically in the background.</p>
             </div>
         </header>
 
@@ -531,10 +569,9 @@
             </div>
             <div class="panel-footer">
                 <div class="panel-actions">
-                    <button type="button" class="btn secondary" onclick="clearQueue()" title="Stop every pending preview job and empty the worker queue.">Clear Queue</button>
-                    <button type="button" class="btn secondary" onclick="restartQueue()" title="Move previews stuck in the processing state back into the queue to try again.">Restart Queue</button>
+                    <button type="button" class="btn secondary" onclick="retryFailed()" title="Requeue every preview that failed to generate.">Retry Failed</button>
                 </div>
-                <p class="panel-note">Clearing removes all pending preview jobs. Restarting keeps the queue but requeues anything stuck in processing.</p>
+                <p class="panel-note">Failed previews are retried automatically a few times with increasing delays before giving up.</p>
             </div>
         </section>
 
@@ -562,86 +599,73 @@
         let currentPage = 1;
         let totalFiles = 0;
         let allTags = [];
-        let queueUpdateInterval;
 
-        function startQueueUpdates() {
-            updateQueueStats();
-            queueUpdateInterval = setInterval(updateQueueStats, 5000);
-        }
-
-        async function updateQueueStats() {
+        async function retryFailed() {
             try {
-                const response = await fetch('/api/queue');
-                const data = await response.json();
-                const queueStats = document.getElementById('queueStats');
-
-                if (data.queue_size > 0 || data.processed > 0) {
-                    queueStats.innerHTML = `Queue: ${data.processed}/${data.total} processed, ${data.queue_size} pending`;
-                    queueStats.style.display = 'flex';
-                } else {
-                    queueStats.style.display = 'none';
-                }
-            } catch (err) {
-                console.error('Failed to update queue stats:', err);
-            }
-        }
-
-        async function clearQueue() {
-            if (!confirm('Clear the processing queue? This will stop all pending video processing.')) return;
-
-            try {
-                const response = await fetch('/api/queue/clear', { method: 'POST' });
+                const response = await fetch('/api/retry', { method: 'POST' });
                 const data = await response.json();
 
                 if (response.ok) {
-                    alert(`Queue cleared. Removed ${data.cleared} items.`);
-                    updateQueueStats();
+                    alert(`Requeued ${data.requeued} failed previews.`);
+                    updateStatus();
                 } else {
-                    alert('Failed to clear queue: ' + data.error);
+                    alert('Failed to retry: ' + data.error);
                 }
             } catch (err) {
-                alert('Failed to clear queue: ' + err.message);
+                alert('Failed to retry: ' + err.message);
             }
         }
 
-        async function restartQueue() {
+        async function scanFiles() {
             try {
-                const response = await fetch('/api/queue/restart', { method: 'POST' });
-                const data = await response.json();
-
+                const response = await fetch('/api/scan', { method: 'POST' });
                 if (response.ok) {
-                    alert(`Queue restarted. Requeued ${data.requeued} stuck items.`);
-                    updateQueueStats();
+                    document.getElementById('scanInfo').textContent = 'Scanning... the list updates when it finishes.';
                 } else {
-                    alert('Failed to restart queue: ' + data.error);
+                    showError('Failed to start scan');
                 }
             } catch (err) {
-                alert('Failed to restart queue: ' + err.message);
+                showError('Failed to start scan: ' + err.message);
             }
         }
 
-        async function scanFiles(forceRefresh = false) {
-            const loading = document.getElementById('loading');
-            const error = document.getElementById('error');
+        const STATUS_LABELS = {
+            pending: 'Queued for preview',
+            processing: 'Generating preview...',
+            error: 'Preview failed, will retry',
+            failed: 'Preview failed',
+        };
 
-            loading.style.display = 'flex';
-            error.style.display = 'none';
+        function renderScrub(frame, file) {
+            if (file.status === 'ready') {
+                const video = document.createElement('video');
+                video.controls = true;
+                video.autoplay = true;
+                video.muted = true;
+                video.loop = true;
+                video.preload = 'metadata';
+                video.src = `/api/scrub?path=${encodeURIComponent(file.full_path)}`;
+                frame.appendChild(video);
 
-            try {
-                const response = await fetch(`/api/scan?refresh=${forceRefresh}`);
-                const data = await response.json();
-
-                if (response.ok) {
-                    currentPage = 1;
-                    loadFiles();
-                } else {
-                    showError(data.error);
-                }
-            } catch (err) {
-                showError('Failed to scan files: ' + err.message);
-            } finally {
-                loading.style.display = 'none';
+                const source = document.createElement('div');
+                source.className = 'scrub-source';
+                source.textContent = file.source === 'jellyfin' ? 'From Jellyfin trickplay' : 'Generated with ffmpeg';
+                frame.appendChild(source);
+                return;
             }
+
+            const placeholder = document.createElement('div');
+            placeholder.className = 'scrub-placeholder';
+            const label = document.createElement('span');
+            label.textContent = STATUS_LABELS[file.status] || file.status;
+            placeholder.appendChild(label);
+            if (file.last_error) {
+                const error = document.createElement('span');
+                error.className = 'scrub-error';
+                error.textContent = file.last_error;
+                placeholder.appendChild(error);
+            }
+            frame.appendChild(placeholder);
         }
 
         function saveFilters() {
@@ -763,15 +787,10 @@
                 card.dataset.filepath = file.full_path;
 
                 card.innerHTML = `
-                    <div class="video-frame">
-                        <video controls autoplay muted loop preload="metadata">
-                            <source src="/api/video?path=${encodeURIComponent(file.full_path)}" type="video/webm">
-                            Your browser does not support the video tag.
-                        </video>
-                    </div>
+                    <div class="video-frame"></div>
                     <div class="card-body">
                         <div class="card-header">
-                            <h3></h3>
+                            <h3><a class="title-link" target="_blank" rel="noopener"></a></h3>
                             <span class="file-size"></span>
                         </div>
                         <p class="file-path"></p>
@@ -791,9 +810,12 @@
 
                 grid.appendChild(card);
 
-                const titleEl = card.querySelector('h3');
-                titleEl.textContent = file.filename;
-                titleEl.setAttribute('title', file.filename);
+                const titleLink = card.querySelector('.title-link');
+                titleLink.textContent = file.filename;
+                titleLink.setAttribute('title', file.filename);
+                titleLink.href = `/api/original?path=${encodeURIComponent(file.full_path)}`;
+
+                renderScrub(card.querySelector('.video-frame'), file);
 
                 const sizeEl = card.querySelector('.file-size');
                 sizeEl.textContent = file.size;
@@ -870,29 +892,64 @@
             return Array.from(card.querySelectorAll('.tag')).map(tag => tag.dataset.tag);
         }
 
-        async function loadConfig() {
+        let lastStatusKey = null;
+
+        function startStatusUpdates() {
+            updateStatus();
+            setInterval(updateStatus, 5000);
+        }
+
+        async function updateStatus() {
             try {
-                const response = await fetch('/api/config');
-                const config = await response.json();
-                const configInfo = document.getElementById('configInfo');
-                configInfo.innerHTML = `Scanning: <strong>${config.video_dir}</strong>`;
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                document.getElementById('configInfo').innerHTML =
+                    `Scanning: <strong>${escapeHtml(data.video_dir)}</strong> &middot; Scrubs: <strong>${escapeHtml(data.scrub_dir)}</strong>`;
+
+                const scan = data.last_scan;
+                const scanInfo = document.getElementById('scanInfo');
+                if (scan.error) {
+                    scanInfo.textContent = `Last scan problem: ${scan.error}`;
+                } else if (scan.finished_at) {
+                    const when = new Date(scan.finished_at * 1000).toLocaleTimeString();
+                    scanInfo.textContent = `Last scan at ${when} found ${scan.found} videos. Rescans every ${Math.round(data.scan_interval / 60)} min.`;
+                }
+
+                const c = data.counts;
+                const parts = [
+                    `${c.ready || 0} ready`,
+                    `${(c.pending || 0) + (c.processing || 0)} to do`,
+                ];
+                if (c.processing) parts.push(`${c.processing} generating now`);
+                if (c.error) parts.push(`${c.error} retrying later`);
+                if (c.failed) parts.push(`${c.failed} failed`);
+                const queueStats = document.getElementById('queueStats');
+                queueStats.textContent = `Previews: ${parts.join(', ')}`;
+                queueStats.style.display = 'flex';
+
+                // Refresh the cards when previews finish, so placeholders turn into videos
+                const statusKey = JSON.stringify(c);
+                if (lastStatusKey !== null && statusKey !== lastStatusKey && !document.activeElement.matches('input')) {
+                    loadFiles();
+                }
+                lastStatusKey = statusKey;
             } catch (err) {
-                console.error('Failed to load config:', err);
+                console.error('Failed to update status:', err);
             }
         }
 
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value;
+            return div.innerHTML;
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            loadConfig();
             loadAllTags();
             loadFilters();
-            startQueueUpdates();
-
-            loadFiles().then(() => {
-                const grid = document.getElementById('fileGrid');
-                if (grid.children.length === 0) {
-                    scanFiles();
-                }
-            });
+            startStatusUpdates();
+            loadFiles();
         });
 
         async function addQuickTag(filepath, tag) {
