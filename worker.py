@@ -9,6 +9,7 @@ import store
 
 shutdown_flag = threading.Event()
 scan_requested = threading.Event()
+first_scan_done = threading.Event()
 _threads = []
 last_scan = {'started_at': None, 'finished_at': None, 'found': 0, 'error': None}
 
@@ -78,6 +79,26 @@ def delete_video(video_path):
     store.remove_video(video_path)
 
 
+def probe_missing_metadata():
+    """Read duration and bit rate for videos that don't have them yet."""
+    paths = store.videos_missing_metadata()
+    if paths:
+        print(f'Reading metadata for {len(paths)} videos')
+    for path in paths:
+        # Let a requested scan or shutdown go first; the rest is picked up next time round
+        if shutdown_flag.is_set() or scan_requested.is_set():
+            return
+        if not os.path.exists(path):
+            # Probably an unmounted share; try again later rather than recording "unknown"
+            continue
+        try:
+            duration, bit_rate = scrubber.probe(path)
+        except Exception as e:
+            print(f'Could not read metadata for {path}: {e}')
+            duration, bit_rate = None, 0
+        store.set_metadata(path, duration, bit_rate)
+
+
 def _scanner_loop():
     while not shutdown_flag.is_set():
         try:
@@ -85,11 +106,20 @@ def _scanner_loop():
         except Exception as e:
             last_scan['error'] = str(e)
             print(f'Scan failed: {e}')
+        first_scan_done.set()
+        try:
+            probe_missing_metadata()
+        except Exception as e:
+            print(f'Reading metadata failed: {e}')
         scan_requested.wait(timeout=config.SCAN_INTERVAL)
         scan_requested.clear()
 
 
 def _worker_loop(worker_id):
+    # Let the first scan forget videos deleted while we were stopped, so we don't try to process them
+    while not first_scan_done.wait(timeout=1):
+        if shutdown_flag.is_set():
+            return
     while not shutdown_flag.is_set():
         video_path = store.claim_next()
         if video_path is None:

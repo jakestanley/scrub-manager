@@ -1,4 +1,5 @@
 """Build scrub previews, from Jellyfin trickplay tiles when available, otherwise with ffmpeg."""
+import json
 import math
 import os
 import re
@@ -31,14 +32,25 @@ def scrub_path_for(video_path):
     return os.path.join(config.SCRUB_DIR, rel + '.webm')
 
 
-def probe_duration(video_path):
+def probe(video_path):
+    """Return (duration in seconds or None, overall bit rate in bits/s or 0 if unknown)."""
     result = subprocess.run(
-        ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', video_path],
+        ['ffprobe', '-v', 'error', '-show_entries', 'format=duration,bit_rate', '-of', 'json', video_path],
         capture_output=True, text=True, timeout=60)
     try:
-        return float(result.stdout.strip())
+        info = json.loads(result.stdout).get('format', {})
     except ValueError:
-        return None
+        info = {}
+    try:
+        duration = float(info['duration'])
+    except (KeyError, ValueError):
+        duration = None
+    try:
+        bit_rate = int(info['bit_rate'])
+    except (KeyError, ValueError):
+        # Some containers don't report it; work it out from size and length instead
+        bit_rate = int(os.path.getsize(video_path) * 8 / duration) if duration else 0
+    return duration, bit_rate
 
 
 def find_jellyfin_trickplay(video_path):
@@ -73,7 +85,7 @@ def generate(video_path):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     partial_path = output_path + '.part'
 
-    duration = probe_duration(video_path)
+    duration, _ = probe(video_path)
     trickplay = find_jellyfin_trickplay(video_path)
     if trickplay:
         source = 'jellyfin'

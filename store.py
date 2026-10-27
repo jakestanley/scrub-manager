@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS videos (
     directory TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     mtime REAL NOT NULL,
+    duration REAL,
+    bit_rate INTEGER,
     status TEXT NOT NULL DEFAULT 'pending',
     source TEXT,
     attempts INTEGER NOT NULL DEFAULT 0,
@@ -68,6 +70,12 @@ def init():
     with connect() as conn:
         conn.execute('PRAGMA journal_mode=WAL')
         conn.executescript(SCHEMA)
+        # Columns added after the first release
+        columns = {row['name'] for row in conn.execute('PRAGMA table_info(videos)')}
+        if 'duration' not in columns:
+            conn.execute('ALTER TABLE videos ADD COLUMN duration REAL')
+        if 'bit_rate' not in columns:
+            conn.execute('ALTER TABLE videos ADD COLUMN bit_rate INTEGER')
         # Anything mid-generation when we last stopped needs doing again
         conn.execute("UPDATE videos SET status = 'pending' WHERE status = 'processing'")
     _migrate_legacy_tags()
@@ -106,7 +114,8 @@ def sync_scanned(found):
                 added += 1
             elif row['size_bytes'] != v['size_bytes'] or row['mtime'] != v['mtime']:
                 conn.execute(
-                    "UPDATE videos SET size_bytes = ?, mtime = ?, status = 'pending', source = NULL, "
+                    "UPDATE videos SET size_bytes = ?, mtime = ?, duration = NULL, bit_rate = NULL, "
+                    "status = 'pending', source = NULL, "
                     'attempts = 0, last_error = NULL, next_attempt_at = 0, updated_at = ? WHERE path = ?',
                     (v['size_bytes'], v['mtime'], now, v['path']))
                 changed += 1
@@ -180,6 +189,17 @@ def retry_failed():
             "WHERE status IN ('error', 'failed')",
             (time.time(),))
         return cur.rowcount
+
+
+def videos_missing_metadata():
+    with connect() as conn:
+        return [row['path'] for row in conn.execute('SELECT path FROM videos WHERE bit_rate IS NULL')]
+
+
+def set_metadata(path, duration, bit_rate):
+    """bit_rate 0 means ffprobe couldn't tell; it isn't probed again until the file changes."""
+    with connect() as conn:
+        conn.execute('UPDATE videos SET duration = ?, bit_rate = ? WHERE path = ?', (duration, bit_rate, path))
 
 
 def ready_videos():

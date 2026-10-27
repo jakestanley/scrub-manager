@@ -279,9 +279,66 @@
             text-decoration: underline;
         }
 
-        .file-size {
+        .file-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            flex-shrink: 0;
             font-size: 0.85rem;
             color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .player {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .player[hidden] {
+            display: none;
+        }
+
+        .player-dialog {
+            background: var(--surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 16px;
+            width: min(1100px, 100%);
+            max-height: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .player-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .player-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            word-break: break-word;
+        }
+
+        .player video {
+            width: 100%;
+            max-height: calc(100vh - 160px);
+            background: #000;
+            border-radius: 12px;
+        }
+
+        .player-error {
+            margin: 0;
+            color: var(--danger);
         }
 
         .file-path {
@@ -601,6 +658,19 @@
         </section>
     </div>
 
+    <div id="player" class="player" hidden>
+        <div class="player-dialog" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+            <div class="player-header">
+                <h3 id="playerTitle"></h3>
+                <button type="button" class="btn small secondary" onclick="closePlayer()">Close</button>
+            </div>
+            <video id="playerVideo" controls></video>
+            <p id="playerError" class="player-error" hidden>
+                Your browser can't play this file's format. <a id="playerDownload">Download it instead</a>.
+            </p>
+        </div>
+    </div>
+
     <script>
         let currentPage = 1;
         let totalFiles = 0;
@@ -860,7 +930,7 @@
                     <div class="card-body">
                         <div class="card-header">
                             <h3><a class="title-link" target="_blank" rel="noopener"></a></h3>
-                            <span class="file-size"></span>
+                            <span class="file-meta"><span class="file-size"></span><span class="file-bitrate"></span></span>
                         </div>
                         <p class="file-path"></p>
                         <div class="tags" role="list"></div>
@@ -883,11 +953,18 @@
                 titleLink.textContent = file.filename;
                 titleLink.setAttribute('title', file.filename);
                 titleLink.href = `/api/original?path=${encodeURIComponent(file.full_path)}`;
+                titleLink.addEventListener('click', event => {
+                    // Ctrl/Cmd/Shift-click still opens the raw file in a new tab
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+                    event.preventDefault();
+                    openPlayer(file);
+                });
 
                 renderScrub(card.querySelector('.video-frame'), file);
 
                 const sizeEl = card.querySelector('.file-size');
                 sizeEl.textContent = file.size;
+                card.querySelector('.file-bitrate').textContent = formatBitRate(file.bit_rate);
 
                 const pathEl = card.querySelector('.file-path');
                 pathEl.textContent = file.path;
@@ -1188,6 +1265,51 @@
                 card.classList.add('filtered');
             }
         }
+
+        function formatBitRate(bitRate) {
+            // null: not read yet, 0: unknown
+            if (!bitRate) return '';
+            if (bitRate >= 1000000) return `${(bitRate / 1000000).toFixed(1)} Mbps`;
+            return `${Math.round(bitRate / 1000)} kbps`;
+        }
+
+        function openPlayer(file) {
+            const player = document.getElementById('player');
+            const video = document.getElementById('playerVideo');
+            const originalUrl = `/api/original?path=${encodeURIComponent(file.full_path)}`;
+
+            document.getElementById('playerTitle').textContent = file.filename;
+            document.getElementById('playerError').hidden = true;
+            document.getElementById('playerDownload').href = originalUrl + '&download=1';
+            video.src = originalUrl;
+            player.hidden = false;
+            video.play().catch(() => {});
+        }
+
+        function closePlayer() {
+            const video = document.getElementById('playerVideo');
+            video.pause();
+            // Drop the source so the browser stops fetching the file
+            video.removeAttribute('src');
+            video.load();
+            document.getElementById('player').hidden = true;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const player = document.getElementById('player');
+            const video = document.getElementById('playerVideo');
+            video.addEventListener('error', () => {
+                if (video.getAttribute('src')) {
+                    document.getElementById('playerError').hidden = false;
+                }
+            });
+            player.addEventListener('click', event => {
+                if (event.target === player) closePlayer();
+            });
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && !player.hidden) closePlayer();
+            });
+        });
 
         function showError(message) {
             const error = document.getElementById('error');

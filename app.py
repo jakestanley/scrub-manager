@@ -61,6 +61,7 @@ def get_files():
         'status': v['status'],
         'source': v['source'],
         'last_error': v['last_error'],
+        'bit_rate': v['bit_rate'],
     } for v in videos]
     return jsonify({
         'files': files,
@@ -90,7 +91,8 @@ def serve_original():
     if video is None or not os.path.exists(video['path']):
         return jsonify({'error': 'File not found'}), 404
     mime_type, _ = mimetypes.guess_type(video['path'])
-    return send_file(video['path'], mimetype=mime_type or 'application/octet-stream')
+    download = request.args.get('download') == '1'
+    return send_file(video['path'], mimetype=mime_type or 'application/octet-stream', as_attachment=download)
 
 
 @app.route('/api/status')
