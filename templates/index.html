@@ -622,10 +622,15 @@
             }
         }
 
+        // The last scan seen when "Scan Now" was clicked; once a newer one completes, reload the list
+        let requestedScanAfter = null;
+        let lastScanSeen = {};
+
         async function scanFiles() {
             try {
                 const response = await fetch('/api/scan', { method: 'POST' });
                 if (response.ok) {
+                    requestedScanAfter = { ...lastScanSeen };
                     document.getElementById('scanInfo').textContent = 'Scanning... the list updates when it finishes.';
                 } else {
                     showError('Failed to start scan');
@@ -712,11 +717,42 @@
             loadFiles();
         }
 
-        async function loadFiles() {
+        function filesUrl() {
             const perPage = document.getElementById('perPage').value;
             const tagFilter = document.getElementById('tagFilter').value;
+            const folderFilter = document.getElementById('folderFilter').value;
             const nameFilter = document.getElementById('nameFilter').value;
             const sortBy = document.getElementById('sortBy').value;
+
+            let url = `/api/files?page=${currentPage}&per_page=${perPage}&sort=${sortBy}`;
+            if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
+            if (folderFilter) url += '&folder=' + encodeURIComponent(folderFilter);
+            if (nameFilter) url += '&name=' + encodeURIComponent(nameFilter);
+            return url;
+        }
+
+        // Update previews on the cards already shown, without adding, removing or reordering cards
+        async function refreshPreviewsInPlace() {
+            try {
+                const response = await fetch(filesUrl());
+                if (!response.ok) return;
+                const data = await response.json();
+                const latest = new Map(data.files.map(file => [file.full_path, file]));
+
+                document.querySelectorAll('.card').forEach(card => {
+                    const file = latest.get(card.dataset.filepath);
+                    if (!file || file.status === card.dataset.status) return;
+                    card.dataset.status = file.status;
+                    const frame = card.querySelector('.video-frame');
+                    frame.innerHTML = '';
+                    renderScrub(frame, file);
+                });
+            } catch (err) {
+                console.error('Failed to refresh previews:', err);
+            }
+        }
+
+        async function loadFiles() {
             const loading = document.getElementById('loading');
             const error = document.getElementById('error');
 
@@ -725,13 +761,7 @@
             loading.style.display = 'flex';
 
             try {
-                let url = `/api/files?page=${currentPage}&per_page=${perPage}&sort=${sortBy}`;
-                const folderFilter = document.getElementById('folderFilter').value;
-                if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
-                if (folderFilter) url += '&folder=' + encodeURIComponent(folderFilter);
-                if (nameFilter) url += '&name=' + encodeURIComponent(nameFilter);
-
-                const response = await fetch(url);
+                const response = await fetch(filesUrl());
                 const data = await response.json();
 
                 if (response.ok) {
@@ -823,6 +853,7 @@
                 const card = document.createElement('article');
                 card.className = 'card';
                 card.dataset.filepath = file.full_path;
+                card.dataset.status = file.status;
 
                 card.innerHTML = `
                     <div class="video-frame"></div>
@@ -946,8 +977,20 @@
                     `Scanning: <strong>${escapeHtml(data.video_dir)}</strong> &middot; Scrubs: <strong>${escapeHtml(data.scrub_dir)}</strong>`;
 
                 const scan = data.last_scan;
+                lastScanSeen = scan;
                 const scanInfo = document.getElementById('scanInfo');
-                if (scan.error) {
+                if (requestedScanAfter) {
+                    const finished = scan.finished_at !== requestedScanAfter.finished_at;
+                    const failed = scan.error && scan.started_at !== requestedScanAfter.started_at;
+                    if (finished || failed) {
+                        requestedScanAfter = null;
+                        loadFolders();
+                        loadFiles();
+                    }
+                }
+                if (requestedScanAfter) {
+                    // Keep showing "Scanning..." until it's done
+                } else if (scan.error) {
                     scanInfo.textContent = `Last scan problem: ${scan.error}`;
                 } else if (scan.finished_at) {
                     const when = new Date(scan.finished_at * 1000).toLocaleTimeString();
@@ -966,11 +1009,12 @@
                 queueStats.textContent = `Previews: ${parts.join(', ')}`;
                 queueStats.style.display = 'flex';
 
-                // Refresh the cards when previews finish, so placeholders turn into videos
+                // When previews finish, turn placeholders into videos. Never reload the whole list here:
+                // that would make deleted cards vanish and shift everything else around.
                 const statusKey = JSON.stringify(c);
-                if (lastStatusKey !== null && statusKey !== lastStatusKey && !document.activeElement.matches('input')) {
+                if (lastStatusKey !== null && statusKey !== lastStatusKey) {
                     loadFolders();
-                    loadFiles();
+                    refreshPreviewsInPlace();
                 }
                 lastStatusKey = statusKey;
             } catch (err) {
