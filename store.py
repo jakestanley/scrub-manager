@@ -49,6 +49,9 @@ SORTS = {
     'size_asc': 'size_bytes ASC',
     'name_asc': 'filename COLLATE NOCASE ASC',
     'name_desc': 'filename COLLATE NOCASE DESC',
+    # Videos with an unknown (or not yet read) bit rate go last either way
+    'bitrate_desc': 'COALESCE(bit_rate, 0) = 0, bit_rate DESC',
+    'bitrate_asc': 'COALESCE(bit_rate, 0) = 0, bit_rate ASC',
 }
 
 _claim_lock = threading.Lock()
