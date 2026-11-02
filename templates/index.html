@@ -438,6 +438,7 @@
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.1s ease, box-shadow 0.2s ease;
+            text-decoration: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -579,6 +580,7 @@
             <div class="hero-actions">
                 <div class="hero-buttons">
                     <button type="button" class="btn primary" onclick="scanFiles()" title="Scan the video directory now instead of waiting for the next background scan.">Scan Now</button>
+                    <a class="btn primary ghost" href="/swipe" title="Go through random videos one at a time: swipe left to delete, right to keep.">Swipe to Sort</a>
                 </div>
                 <p class="action-note" id="scanInfo">The video directory is scanned automatically in the background.</p>
             </div>

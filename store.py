@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
+# Tag applied when a video is kept on the swipe page; kept videos aren't offered again
+KEEP_TAG = 'keep'
+
 SORTS = {
     'size_desc': 'size_bytes DESC',
     'size_asc': 'size_bytes ASC',
@@ -221,14 +224,48 @@ def list_directories():
         return [row['directory'] for row in conn.execute('SELECT DISTINCT directory FROM videos')]
 
 
+def _folder_clause(folder):
+    """SQL matching videos in folder or anywhere below it."""
+    prefix = folder.rstrip('/') + '/'
+    return '(directory = ? OR substr(directory, 1, ?) = ?)', [folder.rstrip('/'), len(prefix), prefix]
+
+
+def _attach_tags(conn, videos):
+    for v in videos:
+        v['tags'] = [r['tag'] for r in conn.execute(
+            'SELECT tag FROM tags WHERE path = ? ORDER BY tag', (v['path'],))]
+
+
+def random_untriaged(count, folder=None):
+    """Random videos not yet tagged as kept, preferring ones whose scrub is ready.
+
+    Returns (videos, how many untriaged videos there are in total).
+    """
+    where = ['path NOT IN (SELECT path FROM tags WHERE tag = ?)']
+    params = [KEEP_TAG]
+    if folder:
+        clause, folder_params = _folder_clause(folder)
+        where.append(clause)
+        params += folder_params
+    where_sql = ' AND '.join(where)
+
+    with connect() as conn:
+        remaining = conn.execute(f'SELECT COUNT(*) FROM videos WHERE {where_sql}', params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM videos WHERE {where_sql} ORDER BY status = 'ready' DESC, RANDOM() LIMIT ?",
+            params + [count]).fetchall()
+        videos = [dict(row) for row in rows]
+        _attach_tags(conn, videos)
+    return videos, remaining
+
+
 def list_videos(page, per_page, sort, name_filter=None, tag_filter=None, folder=None):
     where = []
     params = []
     if folder:
-        # The folder itself and everything below it
-        prefix = folder.rstrip('/') + '/'
-        where.append('(directory = ? OR substr(directory, 1, ?) = ?)')
-        params += [folder.rstrip('/'), len(prefix), prefix]
+        clause, folder_params = _folder_clause(folder)
+        where.append(clause)
+        params += folder_params
     if name_filter:
         where.append('filename LIKE ? COLLATE NOCASE')
         params.append(f'%{name_filter}%')
@@ -246,9 +283,7 @@ def list_videos(page, per_page, sort, name_filter=None, tag_filter=None, folder=
             f'SELECT * FROM videos {where_sql} ORDER BY {order_sql} LIMIT ? OFFSET ?',
             params + [per_page, (page - 1) * per_page]).fetchall()
         videos = [dict(row) for row in rows]
-        for v in videos:
-            v['tags'] = [r['tag'] for r in conn.execute(
-                'SELECT tag FROM tags WHERE path = ? ORDER BY tag', (v['path'],))]
+        _attach_tags(conn, videos)
     return videos, total
 
 

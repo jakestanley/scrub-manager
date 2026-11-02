@@ -10,6 +10,7 @@ A web app for quickly reviewing a video library. Every video gets a short, fast-
 - **Previews stored separately**: scrubs go in `SCRUB_DIR`, never in your media folders
 - **Retries**: failed previews are retried with increasing delays, and can be retried by hand
 - **Tagging, filtering (by name, tag, folder), sorting, deletion**
+- **Swipe to sort** (`/swipe`): random videos one at a time; swipe left to delete, right to keep (tags it `keep` so it isn't shown again), with a few seconds to undo a delete
 - **Low system impact**: ffmpeg runs at the lowest CPU and IO priority
 
 ## Quick start
@@ -73,6 +74,7 @@ find "$VIDEO_DIR" -name '*_scrub.webm' -delete
 
 - `GET /api/files` - paginated video list (`page`, `per_page`, `sort`, `name`, `tag`, `folder`)
 - `GET /api/folders` - folders containing videos, relative to `VIDEO_DIR`
+- `GET /api/random` - random videos not tagged `keep` (`count`, `folder`), for the swipe page
 - `GET /api/scrub?path=` - preview video, or `202` with its status if it isn't ready
 - `GET /api/original?path=` - original video file
 - `GET /api/status` - preview counts, last scan, configuration

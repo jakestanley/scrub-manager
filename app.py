@@ -33,28 +33,18 @@ def known_video(path):
     return store.get_video(path)
 
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-
-@app.route('/api/files')
-def get_files():
-    """Get paginated file list"""
-    page = max(1, int(request.args.get('page', 1)))
-    per_page = min(100, max(1, int(request.args.get('per_page', 20))))
+def folder_arg():
+    """The ?folder= filter (relative to VIDEO_DIR) as an absolute path, or None."""
     folder = request.args.get('folder', '').strip('/')
-    videos, total = store.list_videos(
-        page, per_page,
-        sort=request.args.get('sort', 'size_desc'),
-        name_filter=request.args.get('name', '').strip(),
-        tag_filter=request.args.get('tag'),
-        folder=os.path.join(config.VIDEO_DIR, folder) if folder else None,
-    )
-    files = [{
+    return os.path.join(config.VIDEO_DIR, folder) if folder else None
+
+
+def video_json(v):
+    return {
         'filename': v['filename'],
         'full_path': v['path'],
         'path': v['directory'],
+        'relative_dir': os.path.relpath(v['directory'], config.VIDEO_DIR),
         'size': get_file_size(v['size_bytes']),
         'size_bytes': v['size_bytes'],
         'tags': v['tags'] or ['untagged'],
@@ -62,9 +52,42 @@ def get_files():
         'source': v['source'],
         'last_error': v['last_error'],
         'bit_rate': v['bit_rate'],
-    } for v in videos]
+        'duration': v['duration'],
+    }
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/swipe')
+def swipe():
+    return render_template('swipe.html', keep_tag=store.KEEP_TAG)
+
+
+@app.route('/api/random')
+def random_videos():
+    """Random videos that haven't been kept yet, for the swipe page"""
+    count = min(50, max(1, int(request.args.get('count', 10))))
+    videos, remaining = store.random_untriaged(count, folder=folder_arg())
+    return jsonify({'files': [video_json(v) for v in videos], 'remaining': remaining})
+
+
+@app.route('/api/files')
+def get_files():
+    """Get paginated file list"""
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(100, max(1, int(request.args.get('per_page', 20))))
+    videos, total = store.list_videos(
+        page, per_page,
+        sort=request.args.get('sort', 'size_desc'),
+        name_filter=request.args.get('name', '').strip(),
+        tag_filter=request.args.get('tag'),
+        folder=folder_arg(),
+    )
     return jsonify({
-        'files': files,
+        'files': [video_json(v) for v in videos],
         'total': total,
         'page': page,
         'per_page': per_page,
